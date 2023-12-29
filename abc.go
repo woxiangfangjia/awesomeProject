@@ -255,6 +255,9 @@ func reader(conn *websocket.Conn) {
 
 func setupRoutes() {
 	http.HandleFunc("/ws", wsProcessor)
+	// 设置文件上传和下载的路由
+	http.HandleFunc("/upload", filesystem.HandleFileUpload)
+	http.HandleFunc("/download/", filesystem.HandleFileDownload)
 } //system
 
 var db *sql.DB
@@ -270,22 +273,9 @@ func init() {
 }
 
 func main() {
-
-	// 设置文件上传和下载的路由
-	http.HandleFunc("/upload", filesystem.HandleFileUpload)
-	http.HandleFunc("/download/", filesystem.HandleFileDownload)
-
-	// 启动服务
-	port := 8080
-	fmt.Printf("Server is running on http://localhost:%d\n", port)
-	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
-	if err != nil {
-		fmt.Println("Error starting the server:", err)
-	}
-
 	fmt.Println("Go WebSocket")
 	setupRoutes()
-	err = http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		fmt.Printf("http.ListenAndServe: %v", err)
 	}

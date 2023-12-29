@@ -1,6 +1,8 @@
 package fileserver
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -11,8 +13,24 @@ import (
 
 const uploadDirectory = "./uploads"
 
+// getFileHash returns the SHA-256 hash of the given file name.
+func getFileHash(fileName string) (string, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
 // HandleFileUpload 处理文件上传
-func HandleFileUpload(w http.ResponseWriter, r *http.Request) error {
+func HandleFileUpload(w http.ResponseWriter, r *http.Request) /*error*/ {
 	// 限制上传文件的大小
 	//err := r.ParseMultipartForm(10 << 20)
 	//if err != nil {
@@ -22,7 +40,7 @@ func HandleFileUpload(w http.ResponseWriter, r *http.Request) error {
 	file, handler, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
-		return err
+		//return err
 	}
 	defer func(file multipart.File) {
 		err := file.Close()
@@ -34,7 +52,7 @@ func HandleFileUpload(w http.ResponseWriter, r *http.Request) error {
 	// 创建上传目录
 	if err := os.MkdirAll(uploadDirectory, os.ModePerm); err != nil {
 		http.Error(w, "Error creating the upload directory", http.StatusInternalServerError)
-		return err
+		//return err
 	}
 
 	// 生成上传文件的路径
@@ -42,7 +60,7 @@ func HandleFileUpload(w http.ResponseWriter, r *http.Request) error {
 	dst, err := os.Create(filePath)
 	if err != nil {
 		http.Error(w, "Error creating the file on the server", http.StatusInternalServerError)
-		return err
+		//return err
 	}
 	defer func(dst *os.File) {
 		err := dst.Close()
@@ -54,15 +72,15 @@ func HandleFileUpload(w http.ResponseWriter, r *http.Request) error {
 	// 将上传的文件内容拷贝到服务器上的文件中
 	if _, err := io.Copy(dst, file); err != nil {
 		http.Error(w, "Error copying file to server", http.StatusInternalServerError)
-		return err
+		//return err
 	}
 
 	// 返回上传成功的消息
 	_, err = fmt.Fprintf(w, "File %s uploaded successfully", handler.Filename)
 	if err != nil {
-		return err
+		//return err
 	}
-	return nil
+	//return nil
 }
 
 // HandleFileDownload 处理文件下载
@@ -79,7 +97,12 @@ func HandleFileDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+
+		}
+	}(file)
 
 	// 设置响应头，告知浏览器文件的类型
 	w.Header().Set("Content-Type", "application/octet-stream")
