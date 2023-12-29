@@ -266,14 +266,11 @@ func init() {
 		fmt.Println("数据库连接失败:", err)
 		return
 	}
-} //system
+}
 
 func main() {
 
 	fmt.Println("Go WebSocket")
-
-	//fmt.Println(time.DateTime)
-	//fmt.Println(time.Now())
 
 	setupRoutes()
 	err := http.ListenAndServe(":8080", nil)
