@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,69 +40,74 @@ func HandleFileUpload(w http.ResponseWriter, r *http.Request) /*error*/ {
 	file, handler, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
-		return
+		//return err
 	}
-	defer file.Close()
+	defer func(file multipart.File) {
+		err := file.Close()
+		if err != nil {
+			return
+		}
+	}(file)
 
-	// Calculate SHA-256 hash of the original file name
-	fileNameHash, err := getFileHash(handler.Filename)
-	if err != nil {
-		http.Error(w, "Error calculating file name hash", http.StatusInternalServerError)
-		return
-	}
-
-	// Create upload directory if it doesn't exist
+	// 创建上传目录
 	if err := os.MkdirAll(uploadDirectory, os.ModePerm); err != nil {
 		http.Error(w, "Error creating the upload directory", http.StatusInternalServerError)
-		return
+		//return err
 	}
 
-	// Generate the new file name using the hash
-	filePath := filepath.Join(uploadDirectory, fileNameHash)
+	// 生成上传文件的路径
+	filePath := filepath.Join(uploadDirectory, handler.Filename)
 	dst, err := os.Create(filePath)
 	if err != nil {
 		http.Error(w, "Error creating the file on the server", http.StatusInternalServerError)
-		return
+		//return err
 	}
-	defer dst.Close()
+	defer func(dst *os.File) {
+		err := dst.Close()
+		if err != nil {
+			return
+		}
+	}(dst)
 
-	// Copy the uploaded file content to the server-side file
+	// 将上传的文件内容拷贝到服务器上的文件中
 	if _, err := io.Copy(dst, file); err != nil {
 		http.Error(w, "Error copying file to server", http.StatusInternalServerError)
-		return
+		//return err
 	}
 
-	// Return success message with the new file name
-	fmt.Fprintf(w, "File %s uploaded successfully", fileNameHash)
+	// 返回上传成功的消息
+	_, err = fmt.Fprintf(w, "File %s uploaded successfully", handler.Filename)
+	if err != nil {
+		//return err
+	}
+	//return nil
 }
 
 // HandleFileDownload 处理文件下载
 func HandleFileDownload(w http.ResponseWriter, r *http.Request) {
-	// Get the requested file name
+	// 获取要下载的文件名
 	fileName := filepath.Base(r.URL.Path)
 
-	// Calculate SHA-256 hash of the requested file name
-	fileNameHash, err := getFileHash(fileName)
-	if err != nil {
-		http.Error(w, "Error calculating file name hash", http.StatusInternalServerError)
-		return
-	}
+	// 拼接文件的完整路径
+	filePath := filepath.Join(uploadDirectory, fileName)
 
-	// Concatenate the hash with the upload directory to get the full path
-	filePath := filepath.Join(uploadDirectory, fileNameHash)
-
-	// Open the file
+	// 打开文件
 	file, err := os.Open(filePath)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
 
-	// Set response header to indicate file download
-	w.Header().Set("Content-Disposition", "attachment; filename="+fileName)
+		}
+	}(file)
 
-	// Copy file content to the response body
+	// 设置响应头，告知浏览器文件的类型
+	w.Header().Set("Content-Type", "application/octet-stream")
+
+	// 将文件内容复制到响应体中，实现文件下载
 	_, err = io.Copy(w, file)
 	if err != nil {
 		http.Error(w, "Error copying file to response", http.StatusInternalServerError)
