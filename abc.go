@@ -152,21 +152,26 @@ func reader(conn *websocket.Conn) {
 				switch {
 				case errors.Is(err, sql.ErrNoRows):
 					fmt.Println("用户不存在")
+					sendJSON(conn, "用户不存在")
 				case err != nil:
 					fmt.Println("查询错误:", err)
+					sendJSON(conn, fmt.Sprintf("查询错误:%v", err))
 				default:
 					// 检查密码是否匹配
 					if storedPassword == password {
 						fmt.Println("登录成功")
+						sendJSON(conn, "success!")
 						thisUser.loginState = true
 						onlineUsers[thisUser.userId] = onlineDate{thisUser.userId, thisUser.deviceType, thisUser.userName, thisUser.connection}
 						err := sendMessageFromDB(thisUser.userId)
 						if err != nil {
-							fmt.Println("从缓存回发错误：", err)
+							fmt.Println("拉取缓存错误：", err)
+							sendJSON(conn, "拉取缓存错误")
 							return
 						}
 					} else {
 						fmt.Println("密码不匹配")
+						sendJSON(conn, "密码不匹配")
 					}
 				}
 			case "register":
@@ -178,29 +183,36 @@ func reader(conn *websocket.Conn) {
 				result, err := db.Exec("INSERT INTO UserBasicData (userName, deviceType, userPassword, teachingClass) VALUES (?, ?, ?, ?)", userName, deviceType, userPassword, "[]")
 				if err != nil {
 					fmt.Println("插入记录失败:", err)
+					sendJSON(conn, fmt.Sprintf("插入记录失败:%v", err))
 					return
 				}
 
 				// 获取插入的递增ID
 				id, _ := result.LastInsertId()
 				fmt.Printf("用户 %s 插入成功，ID：%d\n", userName, id)
+				sendJSON(conn, fmt.Sprintf("用户 %s 插入成功，ID：%d", userName, id))
 				// 插入tag
 				teacherTag := params["tag"].(string)
 				if teacherTag != "" {
 					_, err := db.Query("UPDATE userbasicdata SET tag = ? WHERE userid = ?", teacherTag, id)
 					if err != nil {
 						fmt.Println("插入tag失败:", err)
+						sendJSON(conn, fmt.Sprintln("插入tag失败:", err))
 						return
 					}
 					fmt.Printf("tag: %s\n", teacherTag)
+					sendJSON(conn, fmt.Sprintf("tag: %s\n", teacherTag))
 				}
 			default:
 				fmt.Println("Permission denied:", msg.Command)
+				sendJSON(conn, fmt.Sprintln("Permission denied:", msg.Command))
 			}
 		} else {
 			switch msg.Command {
 			case "logout":
 				delete(onlineUsers, thisUser.userId)
+				sendJSON(conn, "done")
+
 			case "getOnlineUser":
 				_, ok := onlineUsers[int(params["id"].(float64))]
 				if ok {
@@ -213,8 +225,10 @@ func reader(conn *websocket.Conn) {
 				_, err = db.Exec("UPDATE userbasicdata SET teachingClass = JSON_ARRAY_APPEND(teachingClass, '$', ?) WHERE userId = ?", addingClass, thisUser.userId)
 				if err != nil {
 					fmt.Println("添加失败：", err)
+					sendJSON(conn, fmt.Sprintln("添加失败：", err))
 				} else {
 					fmt.Println("添加班级成功")
+					sendJSON(conn, "添加班级成功")
 				}
 			case "sendMessage":
 				var message = struct {
@@ -227,20 +241,27 @@ func reader(conn *websocket.Conn) {
 				message.senderId = thisUser.userId
 				message.senderName = thisUser.userName
 				message.time = time.Now()
-
 				_, ok := onlineUsers[int(params["recipient"].(float64))]
+
 				if !ok {
 					_, err := db.Exec("INSERT INTO messagedb (sender, recipient, content, timestamp) VALUES (?, ?, ?, ?)", message.senderId, int(params["recipient"].(float64)), message.content, time.Now())
 					if err != nil {
 						// 处理错误
 						fmt.Println("Error inserting data:", err)
+						sendJSON(conn, fmt.Sprintln("Error inserting data:", err))
 						return
+					} else {
+						sendJSON(conn, "不在线，进入缓存")
 					}
+
 				} else {
 					sendJSON(onlineUsers[int(params["recipient"].(float64))].connection, message)
+					sendJSON(conn, "已发送")
 				}
 			default:
 				fmt.Println("Unknown command:", msg.Command)
+				sendJSON(conn, fmt.Sprintln("Unknown command:", msg.Command))
+
 			}
 		}
 		//fmt.Println(messageType)
