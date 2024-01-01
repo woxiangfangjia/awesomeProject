@@ -224,6 +224,9 @@ func reader(conn *websocket.Conn) {
 			}
 		} else {
 			switch msg.Command {
+
+			case "getClass":
+				//todo 读数据库
 			case "logout":
 				delete(onlineUsers, thisUser.userId)
 				sendJSON(conn, map[string]interface{}{"command": "logout", "status": "success", "message": "done"})
