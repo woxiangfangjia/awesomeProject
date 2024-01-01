@@ -127,24 +127,23 @@ func reader(conn *websocket.Conn) {
 			case "login":
 				userID, ok := params["userId"].(float64)
 				if !ok {
-					sendJSON(thisUser.connection, "invalid params")
+					sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "error", "message": "invalid params"})
 					continue
 				}
 				thisUser.userId = int(userID)
 
 				deviceType, ok := params["deviceType"].(float64)
 				if !ok {
-					sendJSON(thisUser.connection, "invalid params")
+					sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "error", "message": "invalid params"})
 					continue
 				}
 				thisUser.deviceType = int(deviceType)
 
 				password, ok := params["password"].(string)
 				if !ok {
-					sendJSON(thisUser.connection, "invalid params")
+					sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "error", "message": "invalid params"})
 					continue
 				}
-				//thisUser.password = password
 
 				var storedPassword string
 				query := "SELECT userPassword,userName FROM UserBasicData WHERE userID=?"
@@ -152,123 +151,147 @@ func reader(conn *websocket.Conn) {
 				switch {
 				case errors.Is(err, sql.ErrNoRows):
 					fmt.Println("用户不存在")
-					sendJSON(conn, "用户不存在")
+					sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "error", "message": "用户不存在"})
 				case err != nil:
 					fmt.Println("查询错误:", err)
-					sendJSON(conn, fmt.Sprintf("查询错误:%v", err))
+					sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "error", "message": fmt.Sprintf("查询错误:%v", err)})
 				default:
 					// 检查密码是否匹配
 					if storedPassword == password {
 						fmt.Println("登录成功")
-						sendJSON(conn, "success!")
+						sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "success", "message": "登录成功"})
 						thisUser.loginState = true
 						onlineUsers[thisUser.userId] = onlineDate{thisUser.userId, thisUser.deviceType, thisUser.userName, thisUser.connection}
 						err := sendMessageFromDB(thisUser.userId)
 						if err != nil {
 							fmt.Println("拉取缓存错误：", err)
-							sendJSON(conn, "拉取缓存错误")
+							sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "error", "message": "拉取缓存错误"})
 							return
 						}
 					} else {
 						fmt.Println("密码不匹配")
-						sendJSON(conn, "密码不匹配")
+						sendJSON(thisUser.connection, map[string]interface{}{"command": "login", "status": "error", "message": "密码不匹配"})
 					}
 				}
+
 			case "register":
-				userName := params["userName"].(string)
-				deviceType := int(params["deviceType"].(float64))
-				userPassword := params["userPassword"].(string)
-				// 使用userName和deviceType
-				// 插入记录
-				result, err := db.Exec("INSERT INTO UserBasicData (userName, deviceType, userPassword, teachingClass) VALUES (?, ?, ?, ?)", userName, deviceType, userPassword, "[]")
+				userName, ok := params["userName"].(string)
+				if !ok {
+					sendJSON(conn, map[string]interface{}{"command": "register", "status": "error", "message": "invalid userName"})
+					return
+				}
+
+				deviceType, ok := params["deviceType"].(float64)
+				if !ok {
+					sendJSON(conn, map[string]interface{}{"command": "register", "status": "error", "message": "invalid deviceType"})
+					return
+				}
+
+				userPassword, ok := params["userPassword"].(string)
+				if !ok {
+					sendJSON(conn, map[string]interface{}{"command": "register", "status": "error", "message": "invalid userPassword"})
+					return
+				}
+
+				// 使用userName和deviceType插入记录
+				result, err := db.Exec("INSERT INTO UserBasicData (userName, deviceType, userPassword, teachingClass) VALUES (?, ?, ?, ?)", userName, int(deviceType), userPassword, "[]")
 				if err != nil {
 					fmt.Println("插入记录失败:", err)
-					sendJSON(conn, fmt.Sprintf("插入记录失败:%v", err))
+					sendJSON(conn, map[string]interface{}{"command": "register", "status": "error", "message": fmt.Sprintf("插入记录失败:%v", err)})
 					return
 				}
 
 				// 获取插入的递增ID
 				id, _ := result.LastInsertId()
 				fmt.Printf("用户 %s 插入成功，ID：%d\n", userName, id)
-				sendJSON(conn, fmt.Sprintf("用户 %s 插入成功，ID：%d", userName, id))
+				sendJSON(conn, map[string]interface{}{"command": "register", "status": "success", "message": fmt.Sprintf("用户 %s 插入成功，ID：%d", userName, id)})
+
 				// 插入tag
-				teacherTag := params["tag"].(string)
-				if teacherTag != "" {
-					_, err := db.Query("UPDATE userbasicdata SET tag = ? WHERE userid = ?", teacherTag, id)
+				teacherTag, ok := params["tag"].(string)
+				if ok && teacherTag != "" {
+					_, err := db.Exec("UPDATE UserBasicData SET tag = ? WHERE userID = ?", teacherTag, id)
 					if err != nil {
 						fmt.Println("插入tag失败:", err)
-						sendJSON(conn, fmt.Sprintln("插入tag失败:", err))
+						sendJSON(conn, map[string]interface{}{"command": "register", "status": "error", "message": fmt.Sprintf("插入tag失败:%v", err)})
 						return
 					}
 					fmt.Printf("tag: %s\n", teacherTag)
-					sendJSON(conn, fmt.Sprintf("tag: %s\n", teacherTag))
+					sendJSON(conn, map[string]interface{}{"command": "register", "status": "success", "message": fmt.Sprintf("tag: %s", teacherTag)})
 				}
 			default:
 				fmt.Println("Permission denied:", msg.Command)
-				sendJSON(conn, fmt.Sprintln("Permission denied:", msg.Command))
+				sendJSON(conn, map[string]interface{}{"command": "register", "status": "error", "message": "Permission denied"})
 			}
 		} else {
 			switch msg.Command {
 			case "logout":
 				delete(onlineUsers, thisUser.userId)
-				sendJSON(conn, "done")
+				sendJSON(conn, map[string]interface{}{"command": "logout", "status": "success", "message": "done"})
 
 			case "getOnlineUser":
-				_, ok := onlineUsers[int(params["id"].(float64))]
-				if ok {
-					sendJSON(conn, true)
-				} else {
-					sendJSON(conn, false)
+				userID, ok := params["id"].(float64)
+				if !ok {
+					sendJSON(conn, map[string]interface{}{"command": "getOnlineUser", "status": "error", "message": "invalid id"})
+					return
 				}
+
+				_, online := onlineUsers[int(userID)]
+				sendJSON(conn, map[string]interface{}{"command": "getOnlineUser", "status": "success", "result": online})
+
 			case "addClass":
-				addingClass := params["class"].(string)
-				_, err = db.Exec("UPDATE userbasicdata SET teachingClass = JSON_ARRAY_APPEND(teachingClass, '$', ?) WHERE userId = ?", addingClass, thisUser.userId)
+				addingClass, ok := params["class"].(string)
+				if !ok {
+					sendJSON(conn, map[string]interface{}{"command": "addClass", "status": "error", "message": "invalid class"})
+					return
+				}
+
+				_, err = db.Exec("UPDATE UserBasicData SET teachingClass = JSON_ARRAY_APPEND(teachingClass, '$', ?) WHERE userID = ?", addingClass, thisUser.userId)
 				if err != nil {
 					fmt.Println("添加失败：", err)
-					sendJSON(conn, fmt.Sprintln("添加失败：", err))
+					sendJSON(conn, map[string]interface{}{"command": "addClass", "status": "error", "message": fmt.Sprintf("添加失败：%v", err)})
 				} else {
 					fmt.Println("添加班级成功")
-					sendJSON(conn, "添加班级成功")
+					sendJSON(conn, map[string]interface{}{"command": "addClass", "status": "success", "message": "添加班级成功"})
 				}
 			case "sendMessage":
-				var message = struct {
-					senderName string
-					senderId   int
-					content    interface{}
-					time       time.Time
-				}{}
-				message.content = params["content"]
-				message.senderId = thisUser.userId
-				message.senderName = thisUser.userName
-				message.time = time.Now()
-				_, ok := onlineUsers[int(params["recipient"].(float64))]
+				var responseMessage string
+				var recipientID = int(params["recipient"].(float64))
+				_, recipientOnline := onlineUsers[recipientID]
 
-				if !ok {
-					_, err := db.Exec("INSERT INTO messagedb (sender, recipient, content, timestamp) VALUES (?, ?, ?, ?)", message.senderId, int(params["recipient"].(float64)), message.content, time.Now())
+				var message = struct {
+					SenderName string
+					SenderID   int
+					Content    interface{}
+					Time       time.Time
+				}{
+					SenderName: thisUser.userName,
+					SenderID:   thisUser.userId,
+					Content:    params["content"],
+					Time:       time.Now(),
+				}
+
+				if !recipientOnline {
+					_, err := db.Exec("INSERT INTO messagedb (sender, recipient, content, timestamp) VALUES (?, ?, ?, ?)", message.SenderID, recipientID, message.Content, message.Time)
 					if err != nil {
 						// 处理错误
 						fmt.Println("Error inserting data:", err)
-						sendJSON(conn, fmt.Sprintln("Error inserting data:", err))
+						sendJSON(conn, map[string]interface{}{"command": "sendMessage", "status": "error", "message": fmt.Sprintln("Error inserting data:", err)})
 						return
 					} else {
-						sendJSON(conn, "不在线，进入缓存")
+						responseMessage = "不在线，进入缓存"
 					}
-
 				} else {
-					sendJSON(onlineUsers[int(params["recipient"].(float64))].connection, message)
-					sendJSON(conn, "已发送")
+					recipientConnection := onlineUsers[recipientID].connection
+					sendJSON(recipientConnection, map[string]interface{}{"command": "receiveMessage", "message": message})
+					responseMessage = "已发送"
 				}
+
+				sendJSON(conn, map[string]interface{}{"command": "sendMessage", "status": "success", "message": responseMessage})
 			default:
 				fmt.Println("Unknown command:", msg.Command)
-				sendJSON(conn, fmt.Sprintln("Unknown command:", msg.Command))
-
+				sendJSON(conn, map[string]interface{}{"command": msg.Command, "status": "error", "message": "Unknown command"})
 			}
 		}
-		//fmt.Println(messageType)
-		//if err := conn.WriteMessage(messageType, p); err != nil {
-		//	fmt.Println(err)
-		//	return
-		//}
 	}
 }
 
@@ -292,11 +315,9 @@ func init() {
 }
 
 func main() {
-	//err := os.Rename("1", "2")
-
 	fmt.Println("Go WebSocket")
 	setupRoutes()
-	err := http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8900", nil)
 	if err != nil {
 		fmt.Printf("http.ListenAndServe: %v", err)
 	}
