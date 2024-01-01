@@ -107,7 +107,7 @@ func reader(conn *websocket.Conn) {
 	//init
 	thisUser.loginState = false
 	for {
-		messageType, p, err := conn.ReadMessage()
+		_, p, err := conn.ReadMessage()
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -175,7 +175,7 @@ func reader(conn *websocket.Conn) {
 				userPassword := params["userPassword"].(string)
 				// 使用userName和deviceType
 				// 插入记录
-				result, err := db.Exec("INSERT INTO UserBasicData (userName, deviceType, userPassword) VALUES (?, ?, ?)", userName, deviceType, userPassword)
+				result, err := db.Exec("INSERT INTO UserBasicData (userName, deviceType, userPassword, teachingClass) VALUES (?, ?, ?, ?)", userName, deviceType, userPassword, "[]")
 				if err != nil {
 					fmt.Println("插入记录失败:", err)
 					return
@@ -192,9 +192,8 @@ func reader(conn *websocket.Conn) {
 						fmt.Println("插入tag失败:", err)
 						return
 					}
-					fmt.Printf("tag: %s", teacherTag)
+					fmt.Printf("tag: %s\n", teacherTag)
 				}
-
 			default:
 				fmt.Println("Permission denied:", msg.Command)
 			}
@@ -202,21 +201,21 @@ func reader(conn *websocket.Conn) {
 			switch msg.Command {
 			case "logout":
 				delete(onlineUsers, thisUser.userId)
-			//case "getOnlineUser":
-			//	for key := range onlineUsers {
-			//		//fmt.Printf("Key: %d, Value: %+v\n", key, value)
-			//		message := MessageBack{Content: onlineUsers[key]}
-			//		sendJSON(conn, message)
-			//	}
+			case "getOnlineUser":
+				_, ok := onlineUsers[int(params["id"].(float64))]
+				if ok {
+					sendJSON(conn, true)
+				} else {
+					sendJSON(conn, false)
+				}
 			case "addClass":
 				addingClass := params["class"].(string)
-				_, err = db.Exec("UPDATE userbasicdata SET teachingClass = JSON_ARRAY_APPEND(teachingClass, '$', ?) WHERE id = ?", addingClass, thisUser.userId)
+				_, err = db.Exec("UPDATE userbasicdata SET teachingClass = JSON_ARRAY_APPEND(teachingClass, '$', ?) WHERE userId = ?", addingClass, thisUser.userId)
 				if err != nil {
-					panic(err.Error())
+					fmt.Println("添加失败：", err)
+				} else {
+					fmt.Println("添加班级成功")
 				}
-
-				fmt.Println("Successfully added new element to JSON array in userbasicdata table")
-
 			case "sendMessage":
 				var message = struct {
 					senderName string
@@ -240,12 +239,11 @@ func reader(conn *websocket.Conn) {
 				} else {
 					sendJSON(onlineUsers[int(params["recipient"].(float64))].connection, message)
 				}
-
 			default:
 				fmt.Println("Unknown command:", msg.Command)
 			}
 		}
-		fmt.Println(messageType)
+		//fmt.Println(messageType)
 		//if err := conn.WriteMessage(messageType, p); err != nil {
 		//	fmt.Println(err)
 		//	return
