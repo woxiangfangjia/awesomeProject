@@ -22,22 +22,6 @@ type onlineDate struct {
 
 var onlineUsers = make(map[int]onlineDate) //在线id
 
-//func getUserNameById(userId int) (string, error) {
-//	var username string
-//	query := "SELECT username FROM UserBasicData WHERE userId = ?"
-//	err := db.QueryRow(query, userId).Scan(&username)
-//
-//	switch {
-//	case errors.Is(err, sql.ErrNoRows):
-//		return "", fmt.Errorf("用户不存在")
-//	case err != nil:
-//		return "", err
-//	default:
-//		return username, nil
-//	}
-//}
-//}
-
 var upgrade = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -190,8 +174,6 @@ func reader(conn *websocket.Conn) {
 				deviceType := int(params["deviceType"].(float64))
 				userPassword := params["userPassword"].(string)
 				// 使用userName和deviceType
-				// 固定密码
-
 				// 插入记录
 				result, err := db.Exec("INSERT INTO UserBasicData (userName, deviceType, userPassword) VALUES (?, ?, ?)", userName, deviceType, userPassword)
 				if err != nil {
@@ -201,9 +183,18 @@ func reader(conn *websocket.Conn) {
 
 				// 获取插入的递增ID
 				id, _ := result.LastInsertId()
-
 				fmt.Printf("用户 %s 插入成功，ID：%d\n", userName, id)
-				//fmt.Println("in registerProgram")
+				// 插入tag
+				teacherTag := params["tag"].(string)
+				if teacherTag != "" {
+					_, err := db.Query("UPDATE userbasicdata SET tag = ? WHERE userid = ?", teacherTag, id)
+					if err != nil {
+						fmt.Println("插入tag失败:", err)
+						return
+					}
+					fmt.Printf("tag: %s", teacherTag)
+				}
+
 			default:
 				fmt.Println("Permission denied:", msg.Command)
 			}
@@ -217,6 +208,15 @@ func reader(conn *websocket.Conn) {
 			//		message := MessageBack{Content: onlineUsers[key]}
 			//		sendJSON(conn, message)
 			//	}
+			case "addClass":
+				addingClass := params["class"].(string)
+				_, err = db.Exec("UPDATE userbasicdata SET teachingClass = JSON_ARRAY_APPEND(teachingClass, '$', ?) WHERE id = ?", addingClass, thisUser.userId)
+				if err != nil {
+					panic(err.Error())
+				}
+
+				fmt.Println("Successfully added new element to JSON array in userbasicdata table")
+
 			case "sendMessage":
 				var message = struct {
 					senderName string
