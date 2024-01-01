@@ -273,6 +273,8 @@ func init() {
 }
 
 func main() {
+	//err := os.Rename("1", "2")
+
 	fmt.Println("Go WebSocket")
 	setupRoutes()
 	err := http.ListenAndServe(":8080", nil)

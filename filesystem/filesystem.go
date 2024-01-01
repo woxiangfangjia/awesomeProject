@@ -29,6 +29,36 @@ func getFileHash(fileName string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+func CopyAndRenameFile(filePath, newFilePath string) error {
+	// 打开源文件
+	srcFile, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// 创建目标文件
+	dstFile, err := os.Create(newFilePath)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	// 将源文件内容拷贝到目标文件中
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
+		return err
+	}
+
+	// 重命名副本 这什么垃圾Rename啊，天天爆32错误
+	//err = os.Rename(newFilePath, filePath)
+	//if err != nil {
+	//	return err
+	//}
+
+	return nil
+}
+
 // HandleFileUpload 处理文件上传
 func HandleFileUpload(w http.ResponseWriter, r *http.Request) /*error*/ {
 	// 限制上传文件的大小
@@ -75,8 +105,41 @@ func HandleFileUpload(w http.ResponseWriter, r *http.Request) /*error*/ {
 		//return err
 	}
 
+	file, err = os.Open(filePath)
+	if err != nil {
+		http.Error(w, "Error reopening the file", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+	// 计算文件的SHA256哈希值
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		http.Error(w, "Error calculating file hash", http.StatusInternalServerError)
+		return
+	}
+
+	// 获取SHA256哈希值的十六进制表示
+	//hash := hex.EncodeToString(hasher.Sum(nil))
+	hashInBytes := hasher.Sum(nil)[:]
+	sha256Hash := fmt.Sprintf("%x", hashInBytes)
+
+	// 构建新的文件名
+	newFileName := sha256Hash
+	newFilePath := filepath.Join(uploadDirectory, newFileName)
+
+	//重命名
+	//err = os.Rename(filePath, newFilePath)
+	//if err != nil {
+	//	http.Error(w, "Error Rename", http.StatusInternalServerError)
+	//	return
+	//}
+	file.Close()
+	if CopyAndRenameFile(filePath, newFilePath) != nil {
+		http.Error(w, "Error Rename", http.StatusInternalServerError)
+	}
+
 	// 返回上传成功的消息
-	_, err = fmt.Fprintf(w, "File %s uploaded successfully", handler.Filename)
+	_, err = fmt.Fprintf(w, "File %s uploaded successfully", newFileName)
 	if err != nil {
 		//return err
 	}
